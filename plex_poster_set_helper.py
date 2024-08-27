@@ -128,7 +128,7 @@ def find_collection(library, poster):
     if collections:
         return collections
 
-    #print(f"{poster['title']} collection not found, skipping.")
+    print(f"{poster['title']} collection not found, skipping.")
     return None
 
         
@@ -210,16 +210,17 @@ def upload_collection_poster(poster, movies):
 
 
 def set_posters(url, tv, movies):
-    movieposters, showposters, collectionposters = scrape(url)
-
-    for poster in collectionposters:
-        upload_collection_poster(poster, movies)
-        
-    for poster in movieposters:
-        upload_movie_poster(poster, movies)
-    
-    for poster in showposters:
-        upload_tv_poster(poster, tv)
+    result = scrape(url)
+    if result:
+        movieposters, showposters, collectionposters = result
+        for poster in collectionposters:
+            upload_collection_poster(poster, movies)
+        for poster in movieposters:
+            upload_movie_poster(poster, movies)
+        for poster in showposters:
+            upload_tv_poster(poster, tv)
+    else:
+        print("No posters found.")
 
 def scrape_posterdb_set_link(soup):
     try:
@@ -326,7 +327,6 @@ def scrape_mediux(soup):
     quality_suffix = "&w=3840&q=80"
     
     scripts = soup.find_all('script')
-    
 
     media_type = None
     showposters = []
@@ -349,7 +349,6 @@ def scrape_mediux(soup):
                     
     for data in poster_data:        
         if media_type == "Show":
-
             episodes = data_dict["set"]["show"]["seasons"]
             show_name = data_dict["set"]["show"]["name"]
             try:
@@ -380,7 +379,6 @@ def scrape_mediux(soup):
                 file_type = "show_cover"
 
         elif media_type == "Movie":
-
             if data["movie_id"]:
                 if data_dict["set"]["movie"]:
                     title = data_dict["set"]["movie"]["title"]
@@ -427,34 +425,93 @@ def scrape_mediux(soup):
                 movieposter["source"] = "mediux"
                 movieposters.append(movieposter)
             
+    #print(f"scrape_mediux returning: {movieposters}, {showposters}, {collectionposters}")
     return movieposters, showposters, collectionposters
 
+def process_boxset_url(boxset_id, soup2):
+    boxset_url = f"https://mediux.pro/boxsets/{boxset_id}"
+    print(f"Fetching boxset data from: {boxset_url}")
+    
+    scripts = soup2.find_all('script')
+    data_dict = {}
+
+    for script in scripts:
+        if 'files' in script.text:
+            if 'set' in script.text:
+                if 'Set Link\\' not in script.text:
+                    data_dict = parse_string_to_dict(script.text)
+                    break  # Stop searching after finding the relevant script
+
+    if not data_dict:
+        print("No relevant script data found.")
+        return []
+
+    if 'boxset' not in data_dict or 'sets' not in data_dict['boxset']:
+        print("Invalid data structure.")
+        return []
+
+    set_ids = [set_item['id'] for set_item in data_dict['boxset']['sets']]
+    print(f"Extracted set IDs: {set_ids}")
+
+    results = []
+    for set_id in set_ids:
+        try:
+            set_results = set_posters(f"https://mediux.pro/sets/{set_id}", tv, movies)
+            if set_results:  # Check if set_results is not None
+                results.extend(set_results)  # Collect results from each set
+        except Exception as e:
+            print(f"Error processing set {set_id}: {e}")
+
+    return results
 
 def scrape(url):
-    if ("theposterdb.com" in url):
-        if("/set/" in url or "/user/" in url):
+    print(f"Processing URL: {url}")
+    
+    if "theposterdb.com" in url:
+        #print("Detected theposterdb.com URL.")
+        if "/set/" in url or "/user/" in url:
             soup = cook_soup(url)
-            return scrape_posterdb(soup)
-        elif("/poster/" in url):
+            result = scrape_posterdb(soup)
+            #print(f"scrape_posterdb result: {result}")
+            return result
+        elif "/poster/" in url:
             soup = cook_soup(url)
             set_url = scrape_posterdb_set_link(soup)
             if set_url is not None:
                 set_soup = cook_soup(set_url)
-                return scrape_posterdb(set_soup)
+                result = scrape_posterdb(set_soup)
+                #print(f"scrape_posterdb result from set URL: {result}")
+                return result
             else:
                 sys.exit("Poster set not found. Check the link you are inputting.")
-            #menu_selection = input("You've provided the link to a single poster, rather than a set. \n \t 1. Upload entire set\n \t 2. Upload single poster \nType your selection: ")
-    elif ("mediux.pro" in url) and ("sets" in url):
-        soup = cook_soup(url)
-        return scrape_mediux(soup)
-    elif (".html" in url):
+    
+    elif "mediux.pro" in url:
+        #print("Detected mediux.pro URL.")
+        if "boxsets" in url:
+            #print("Detected Mediux Boxset URL.")
+            boxset_id = url.split('/')[-1]
+            soup2 = cook_soup(url)
+            return process_boxset_url(boxset_id, soup2)
+        elif "sets" in url:
+            #print("Detected Mediux Set URL.")
+            soup = cook_soup(url)
+            result = scrape_mediux(soup)
+            #print(f"scrape_mediux result: {result}")
+            return result
+        else:
+            sys.exit("Invalid Mediux URL. Check the link you are inputting.")
+    
+    elif ".html" in url:
+        #print("Detected local HTML file.")
         with open(url, 'r', encoding='utf-8') as file:
             html_content = file.read()
         soup = BeautifulSoup(html_content, 'html.parser')
-        return scrape_posterdb(soup)
+        result = scrape_posterdb(soup)
+        #print(f"scrape_posterdb result from local file: {result}")
+        return result
+    
     else:
         sys.exit("Poster set not found. Check the link you are inputting.")
-
 
 # Checks if url does not start with "//", "#", or is blank
 def is_not_comment(url):
