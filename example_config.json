@@ -1,7 +1,12 @@
 {
     "base_url": "",
     "token": "",
-    "tv_library": "TV Shows",
+    "tv_library": ["TV Shows", "Anime"],
     "movie_library": "Movies",
-    "mediux_filters": ["title_card", "background", "season_cover", "show_cover"]
+    "mediux_filters": ["title_card", "background", "season_cover", "show_cover"],
+    "append_label": "Overlay",
+    "assets_directory": "assets",
+    "asset_folders": true,
+    "overwrite_assets": false,
+    "overwrite_labelled_shows": false
 }

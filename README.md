@@ -1,6 +1,23 @@
-# plex-poster-set-helper (Mediux Boxset Compatible)
+# plex-poster-set-helper (Kometa-Style Assets & Mediux Boxset Compatible)
 
 plex-poster-set-helper is a tool to help upload sets of posters from ThePosterDB or MediUX to your Plex server in seconds!
+This fork was created for my own personal use. There may or may not be updates / bugfixes.
+
+## Current changes in this fork
+   - MediUX Boxset compatibility
+   - Asset creation
+   - Asset priority
+   - Labeling of refreshed series/movies/collections
+   - Kometa style asset compatibility
+   - Tweaks to printed messages
+   - New configuration options
+        - "append_label": "Overlay" (This label is applied in Plex to all items with assets applied through the script).
+        - "assets_directory": "assets", (Asset folder name, located in the same folder as the script)
+        - "asset_folders": true, (Kometa style asset folders)
+        - "overwrite_assets": false, (Overwrite saved assets with new ones from scraped source)
+        - "overwrite_labelled_shows": false (If false will not touch any show with the "Overlay" label in Plex)
+   - Fixed Collections
+   - Various other tweaks / changes.
 
 ## Installation
 
