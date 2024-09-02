@@ -34,9 +34,10 @@ overwrite_assets = False
 base_url = ""
 token = ""
 asset_folders = True
+only_process_new_assets = True
 
 def plex_setup():
-    global tv, movies, collections, append_label, overwrite_labelled_shows, assets_directory, overwrite_assets, base_url, token, asset_folders
+    global tv, movies, collections, append_label, overwrite_labelled_shows, assets_directory, overwrite_assets, base_url, token, asset_folders, only_process_new_assets
 
     if os.path.exists("config.json"):
         try:
@@ -50,6 +51,7 @@ def plex_setup():
             overwrite_assets = config.get("overwrite_assets", False)
             overwrite_labelled_shows = config.get("overwrite_labelled_shows", False)
             asset_folders = config.get("asset_folders", True)  # Default to True if not specified
+            asset_folders = config.get("only_process_new_assets", True)  # Default to True if not specified
 
         except (FileNotFoundError, json.JSONDecodeError) as e:
             sys.exit(f"Error with config.json file: {e}. Please consult the readme.md.")
@@ -243,10 +245,6 @@ def get_file_path_from_plex(rating_key):
     except ET.ParseError as e:
         raise Exception(f"Failed to parse XML: {e}")
 
-# Example usage (you might need to update with actual data)
-# last_folder = get_file_path_from_plex(rating_key)
-# print(f"Last folder: {last_folder}")
-
 
 def find_in_library(library, poster):
     for lib in library:
@@ -264,11 +262,16 @@ def find_in_library(library, poster):
                 return library_item, show_path
 
         except Exception as e:
-            print(e)
-            pass
+            # Convert the exception to a string for easy checking
+            error_message = str(e)
+            
+            if "Unable to find item with title" in error_message:
+                continue  # Skip printing this specific error
+            else:
+                print(e)  # Print all other errors
 
-    print(f"{poster['title']} not found, skipping.")
     return None, None
+
 
 
 def find_collection(library, poster):
@@ -285,7 +288,6 @@ def find_collection(library, poster):
     if collections:
         return collections
 
-    print(f"{poster['title']} (collection) not found, skipping.")
     return None
 
         
@@ -405,7 +407,11 @@ def upload_tv_poster(poster, tv):
             else:
                 file_path = get_asset_file_path(assets_directory, f"tv", file_name)
             if os.path.exists(file_path) and not overwrite_assets:
-                print(f"Using existing file for upload to {poster['title']}: {file_path}")
+                if only_process_new_assets:
+                    print(f"Skipping upload for {poster['title']} as it already exists in {tv_show.librarySectionTitle} library.")
+                    return
+                else:
+                    print(f"Using existing file for upload to {poster['title']} in {tv_show.librarySectionTitle} library.")
             else:
                 # Save the file to the assets directory
                 if asset_folders:
@@ -479,7 +485,11 @@ def upload_movie_poster(poster, movies):
                 file_name = f"{show_path}.jpg"  # Adjust the naming as needed
                 file_path = get_asset_file_path(assets_directory, f"movies", file_name)
             if os.path.exists(file_path) and not overwrite_assets:
-                print(f"Using existing file for upload to {poster['title']}: {file_path} in {movie.librarySectionTitle} library.")
+                if only_process_new_assets:
+                    print(f"Skipping upload for {poster['title']} as it already exists in {movie.librarySectionTitle} library.")
+                    return
+                else:
+                    print(f"Using existing file for upload to {poster['title']} in {movie.librarySectionTitle} library.")
             else:
                 # Save the file to the assets directory
                 if asset_folders:
@@ -525,7 +535,11 @@ def upload_collection_poster(poster, movies):
                         file_name = f"{poster['title']}_poster.jpg"  # Adjust the naming as needed
                         file_path = get_asset_file_path(assets_directory, f"collections", file_name)
                     if os.path.exists(file_path) and not overwrite_assets:
-                        print(f"Using existing file for upload to {poster['title']}: {file_path} in {collection.librarySectionTitle} library.")
+                        if only_process_new_assets:
+                            print(f"Skipping upload for {poster['title']} as it already exists in {collection.librarySectionTitle} library.")
+                            return
+                        else:
+                            print(f"Using existing file for upload to {poster['title']} in {collection.librarySectionTitle} library.")
                     else:
                         # Save the file to the assets directory
                         if asset_folders:
@@ -556,11 +570,18 @@ def upload_collection_poster(poster, movies):
 def set_posters(url):
     print(f"Setting posters for URL: {url}")
     try:
-        movieposters, showposters, collectionposters = scrape(url)
-
-        if not (movieposters or showposters or collectionposters):
+        # Unpack the returned values safely
+        result = scrape(url)
+        if result is None or len(result) != 3:
+            #print("Scrape function did not return the expected 3 values.")
             return
-
+        
+        movieposters, showposters, collectionposters = result
+        
+        if not (movieposters or showposters or collectionposters):
+            print("No posters found.")
+            return
+        
         for poster in collectionposters:
             upload_collection_poster(poster, collections)
 

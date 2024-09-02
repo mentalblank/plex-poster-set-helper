@@ -16,6 +16,7 @@ This fork was created for my own personal use. There may or may not be updates /
         - "asset_folders": true, (Kometa style asset folders)
         - "overwrite_assets": false, (Overwrite saved assets with new ones from scraped source)
         - "overwrite_labelled_shows": false (If false will not touch any show with the "Overlay" label in Plex)
+		- "only_process_new_assets" true (Combined with overwrite_labelled_shows (True) will only update posters for items that do not have assets)
    - Fixed Collections
    - Various other tweaks / changes.
 

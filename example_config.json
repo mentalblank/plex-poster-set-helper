@@ -8,5 +8,6 @@
     "assets_directory": "assets",
     "asset_folders": true,
     "overwrite_assets": false,
-    "overwrite_labelled_shows": false
+    "overwrite_labelled_shows": false,
+    "only_process_new_assets": true
 }
