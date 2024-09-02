@@ -9,5 +9,6 @@
     "asset_folders": true,
     "overwrite_assets": false,
     "overwrite_labelled_shows": false,
-    "only_process_new_assets": true
+    "only_process_new_assets": true,
+	"useragent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 }

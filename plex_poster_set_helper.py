@@ -35,9 +35,10 @@ base_url = ""
 token = ""
 asset_folders = True
 only_process_new_assets = True
+useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
 def plex_setup():
-    global tv, movies, collections, append_label, overwrite_labelled_shows, assets_directory, overwrite_assets, base_url, token, asset_folders, only_process_new_assets
+    global tv, movies, collections, append_label, overwrite_labelled_shows, assets_directory, overwrite_assets, base_url, token, asset_folders, only_process_new_assets, useragent
 
     if os.path.exists("config.json"):
         try:
@@ -52,6 +53,7 @@ def plex_setup():
             overwrite_labelled_shows = config.get("overwrite_labelled_shows", False)
             asset_folders = config.get("asset_folders", True)  # Default to True if not specified
             asset_folders = config.get("only_process_new_assets", True)  # Default to True if not specified
+            useragent = config.get("useragent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")  # Default if not specified
 
         except (FileNotFoundError, json.JSONDecodeError) as e:
             sys.exit(f"Error with config.json file: {e}. Please consult the readme.md.")
@@ -140,7 +142,7 @@ def save_to_assets_directory(assets_directory, plex_folder, file_name, file_url)
     
     # Define headers
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        "User-Agent": f"{useragent}"
     }
     
     # Download and save the file
@@ -846,15 +848,17 @@ def scrape(url):
         print("Detected theposterdb.com URL.")
         if "/set/" in url or "/user/" in url:
             soup = cook_soup(url)
-            print(f"scrape_posterdb result: {result}")
-            return scrape_posterdb(soup)
+            result = scrape_posterdb(soup)
+            #print(f"scrape_posterdb result: {result}")
+            return result
         elif "/poster/" in url:
             soup = cook_soup(url)
             set_url = scrape_posterdb_set_link(soup)
             if set_url is not None:
                 set_soup = cook_soup(set_url)
-                print(f"scrape_posterdb result from set URL: {result}")
-                return scrape_posterdb(set_soup)
+                result = scrape_posterdb(soup)
+                #print(f"scrape_posterdb result from set URL: {result}")
+                return result
             else:
                 sys.exit("Poster set not found. Check the link you are inputting.")
         else:
