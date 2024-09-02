@@ -1,10 +1,11 @@
-# plex-poster-set-helper (Kometa-Style Assets & Mediux Boxset Compatible)
+# plex-poster-set-helper (Kometa-Style Assets & Mediux Boxset/User Compatible)
 
 plex-poster-set-helper is a tool to help upload sets of posters from ThePosterDB or MediUX to your Plex server in seconds!
 This fork was created for my own personal use. There may or may not be updates / bugfixes.
 
 ## Current changes in this fork
    - MediUX Boxset compatibility
+   - MediUX User compatibility
    - Asset creation
    - Asset priority
    - Labeling of refreshed series/movies/collections
@@ -16,7 +17,7 @@ This fork was created for my own personal use. There may or may not be updates /
         - "asset_folders": true, (Kometa style asset folders)
         - "overwrite_assets": false, (Overwrite saved assets with new ones from scraped source)
         - "overwrite_labelled_shows": false (If false will not touch any show with the "Overlay" label in Plex)
-		- "only_process_new_assets" true (Combined with overwrite_labelled_shows (True) will only update posters for items that do not have assets)
+		- "only_process_new_assets" true (Combined with overwrite_labelled_shows (true) will only update posters for items in labelled shows that do not already have assets saved)
    - Fixed Collections
    - Various other tweaks / changes.
 
@@ -77,6 +78,6 @@ To clarify, use the names of your own libraries, those are just placeholders. If
 ### Using args
 Command line arguments are supported.
 
-1. Passing a single link e.g.`plex_poster_set_helper.py https://mediux.pro/sets/9242`
+1. Passing a single link e.g.`plex_poster_set_helper.py https://mediux.pro/sets/9242` or `plex_poster_set_helper.py https://mediux.pro/user/XXYYZZ/sets`
 
 2. Passing a bulk import file e.g. `plex_poster_set_helper.py bulk example_bulk_import.txt`

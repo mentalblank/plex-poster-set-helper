@@ -458,7 +458,6 @@ def upload_tv_poster(poster, tv):
                         upload_target.uploadArt(filepath=os.path.join(os.path.dirname(os.path.abspath(__file__)), file_path))
                     except:
                         print("Unable to upload last poster.")
-                if poster["source"] == "posterdb":
                     time.sleep(6)  # too many requests prevention
             except:
                 print(f"{poster['title']} - Season {poster['season']} not found in {tv_show.librarySectionTitle} library, skipping.")
@@ -506,8 +505,7 @@ def upload_movie_poster(poster, movies):
             try:
                 movie.uploadPoster(filepath=os.path.join(os.path.dirname(os.path.abspath(__file__)), file_path))
                 print(f'Uploaded art for {poster["title"]}.')
-                if poster["source"] == "posterdb":
-                    time.sleep(6)  # too many requests prevention
+                time.sleep(6)  # too many requests prevention
             except:
                 print(f'Unable to upload art for {poster["title"]} in {movie.librarySectionTitle} library.')
         else:
@@ -556,8 +554,7 @@ def upload_collection_poster(poster, movies):
                     try:
                         collection.uploadPoster(filepath=os.path.join(os.path.dirname(os.path.abspath(__file__)), file_path))
                         print(f'Uploaded art for {poster["title"]}.')
-                        if poster["source"] == "posterdb":
-                            time.sleep(6)  # too many requests prevention
+                        time.sleep(6)  # too many requests prevention
                     except:
                         print(f'Unable to upload art for {poster["title"]} in {collection.librarySectionTitle} library.')
                 else:
@@ -617,6 +614,38 @@ def scrape_posterd_user_info(soup):
         return pages
     except:
         return None
+        
+def scrape_mediux_user_info(base_url):
+    current_page = 1
+    total_pages = 1
+
+    while True:
+        page_url = f"{base_url}?page={current_page}"
+        print(f"Processing page: {current_page}")  # Print the current page number
+        soup = cook_soup(page_url)
+
+        # Find all page number links on the current page
+        page_links = soup.select('a[href*="page="]')
+        page_numbers = [
+            int(re.search(r'page=(\d+)', a.get('href')).group(1))
+            for a in page_links if re.search(r'page=(\d+)', a.get('href'))
+        ]
+
+        if page_numbers:
+            total_pages = max(page_numbers)
+
+        # Find the link to the next page
+        next_page_link = soup.select_one('a[aria-label="Go to next page"]')
+        if next_page_link and next_page_link.get('href'):
+            match = re.search(r'page=(\d+)', next_page_link.get('href'))
+            if match:
+                current_page = int(match.group(1))
+            else:
+                break
+        else:
+            break
+
+    return total_pages
 
 def scrape_posterdb(soup):
     movieposters = []
@@ -846,10 +875,15 @@ def scrape(url):
     print(f"Processing URL: {url}")
     if "theposterdb.com" in url:
         print("Detected theposterdb.com URL.")
-        if "/set/" in url or "/user/" in url:
+        if "/set/" in url:
             soup = cook_soup(url)
             result = scrape_posterdb(soup)
             #print(f"scrape_posterdb result: {result}")
+            return result
+        elif "/user/" in url:
+            soup = cook_soup(url)
+            result = scrape_entire_user(soup)
+            #print(f"scrape_entire_user result: {result}")
             return result
         elif "/poster/" in url:
             soup = cook_soup(url)
@@ -869,6 +903,11 @@ def scrape(url):
             boxset_id = url.split('/')[-1]
             soup2 = cook_soup(url)
             return process_boxset_url(boxset_id, soup2)
+        elif "/user/" in url:
+            soup = cook_soup(url)
+            result = scrape_mediux_user(soup)
+            #print(f"scrape_mediux_user: {result}")
+            return result
         elif "/sets/" in url:
             print("Detected Mediux Set URL.")
             soup = cook_soup(url)
@@ -904,8 +943,11 @@ def parse_urls(file_path):
         for url in urls:
             url = url.strip()
             if is_not_comment(url):
-                if "/user/" in url:
-                    scrape_entire_user(url)
+                if "/user/" in url.lower():
+                    if "theposterdb.com" in url.lower():
+                        scrape_entire_user(url)
+                    elif "mediux.pro" in url.lower():
+                        scrape_mediux_user(url)
                 else:  
                     set_posters(url)
     except FileNotFoundError:
@@ -923,6 +965,118 @@ def scrape_entire_user(url):
         print(f"Scraping page {page+1}.")
         page_url = f"{url}?section=uploads&page={page+1}"
         set_posters(page_url)
+        
+def scrape_mediux_user(url):
+    print(f"Attempting to scrape '{url}' ...please be patient.")
+    pages = scrape_mediux_user_info(url)
+    print(f"Found {pages} pages for '{url}'")
+    
+    if pages is None:
+        print("Error retrieving page count.")
+        return
+    
+    if "?" in url:
+        cleaned_url = url.split("?")[0]
+    else:
+        cleaned_url = url
+        
+    all_set_ids = []
+    all_boxset_ids = []
+
+    for page in range(1, pages + 1):
+        print(f"Scraping page {page}.")
+        page_url = f"{cleaned_url}?page={page}"
+        page_soup = cook_soup(page_url)
+        
+        # Extract IDs from the script
+        set_ids, boxset_ids = extract_ids_from_script(page_soup)
+        # Print the lists before returning
+        all_set_ids.extend(set_ids)
+        all_boxset_ids.extend(boxset_ids)
+    
+    # Remove duplicates and process IDs
+    unique_set_ids = list(set(all_set_ids))
+    unique_boxset_ids = list(set(all_boxset_ids))
+    # Print the lists before returning
+    print("Processing Sets:", list(unique_set_ids))
+    print("Processing Box Sets:", list(unique_boxset_ids))
+    process_ids(unique_set_ids, unique_boxset_ids)
+
+def extract_ids_from_script(soup):
+    """Extract set and boxset IDs from script tags."""
+    scripts = soup.find_all('script')
+    data_dict = {}
+
+    for script in scripts:
+        if 'files' in script.text and 'set' in script.text:
+            if 'Set Link\\' not in script.text:
+                data_dict = parse_string_to_dict(script.text)
+                break  # Stop searching after finding the relevant script
+
+    if not data_dict:
+        print("No relevant script data found.")
+        return [], []
+
+    # Debug output to check the structure of the parsed data
+    #print("Parsed data dictionary:", data_dict)
+
+    # Function to recursively find 'sets' in the nested structure
+    def find_sets(data):
+        if isinstance(data, dict):
+            if 'sets' in data:
+                return data['sets']
+            for key, value in data.items():
+                result = find_sets(value)
+                if result:
+                    return result
+        elif isinstance(data, list):
+            for item in data:
+                result = find_sets(item)
+                if result:
+                    return result
+        return None
+
+    # Attempt to locate 'sets' key
+    sets = find_sets(data_dict)
+    
+    if not sets:
+        print("No 'sets' key found in the nested structure.")
+        return [], []
+
+    #print("Extracted sets:", sets)
+
+    set_ids = set()
+    boxset_ids = set()
+
+    for item in sets:
+        if 'boxset' in item and item['boxset']:
+            boxset_id = item['boxset'].get('id')
+            if boxset_id:
+                boxset_ids.add(boxset_id)
+            else:
+                # Add to set_ids if boxset_id is None, Null, or not present
+                if 'id' in item:
+                    set_ids.add(item['id'])
+        else:
+            # Add to set_ids if 'boxset' is not present or is falsy
+            if 'id' in item:
+                set_ids.add(item['id'])
+
+    return list(set_ids), list(boxset_ids)
+    
+
+
+def process_ids(set_ids, boxset_ids):
+    """Create URLs and call set_posters for each ID."""
+    for boxset_id in boxset_ids:
+        url = f"https://mediux.pro/boxsets/{boxset_id}"
+        set_posters(url)
+    
+    for set_id in set_ids:
+        url = f"https://mediux.pro/sets/{set_id}"
+        set_posters(url)
+        
+
 
 if __name__ == "__main__":
     # Set stdout encoding to UTF-8
@@ -940,8 +1094,11 @@ if __name__ == "__main__":
             else:
                 print("Please provide the path to the .txt file.")
         # a single url was provided
-        elif "/user/" in command:
-            scrape_entire_user(command)
+        elif "/user/" in command.lower():
+            if "theposterdb.com" in command.lower():
+                scrape_entire_user(command)
+            elif "mediux.pro" in command.lower():
+                scrape_mediux_user(command)
         else:
             set_posters(command)
             
@@ -964,6 +1121,9 @@ if __name__ == "__main__":
                 except FileNotFoundError:
                     print("File not found. Please enter a valid file path.")
             elif "/user/" in user_input.lower():
-                scrape_entire_user(user_input)
+                if "theposterdb.com" in user_input.lower():
+                    scrape_entire_user(user_input)
+                elif "mediux.pro" in user_input.lower():
+                    scrape_mediux_user(user_input)
             else:
                 set_posters(user_input)
