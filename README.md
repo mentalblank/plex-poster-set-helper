@@ -15,7 +15,7 @@ This fork was created for my own personal use. There may or may not be updates /
         - "append_label": "Overlay" (This label is applied in Plex to all items with assets applied through the script).
         - "assets_directory": "assets", (Asset folder name, located in the same folder as the script)
         - "asset_folders": true, (Kometa style asset folders)
-        - "overwrite_assets": false, (Overwrite saved assets with new ones from scraped source)
+        - "overwrite_existing_assets": false, (Overwrite saved assets with new ones from scraped source)
         - "overwrite_labelled_shows": false (If false will not touch any show with the "Overlay" label in Plex)
 		- "only_process_new_assets" true (Combined with overwrite_labelled_shows (true) will only update posters for items in labelled shows that do not already have assets saved)
    - Fixed Collections
