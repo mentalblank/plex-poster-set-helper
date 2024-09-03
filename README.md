@@ -18,7 +18,8 @@ This fork was created for my own personal use. There may or may not be updates /
         - "overwrite_existing_assets": false, (Overwrite saved assets with new ones from scraped source)
         - "overwrite_labelled_shows": false (If false will not touch any show with the "Overlay" label in Plex)
 		- "only_process_new_assets" true (Combined with overwrite_labelled_shows (true) will only update posters for items in labelled shows that do not already have assets saved)
-   - Fixed Collections
+   - Fixed collections
+   - Mediux collection backgrounds
    - Various other tweaks / changes.
 
 ## Installation

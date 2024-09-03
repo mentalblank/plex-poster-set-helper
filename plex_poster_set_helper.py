@@ -69,6 +69,25 @@ def plex_setup():
                 handle_plex_exception(e, f"{name} library named not found in config.json")
         return result
 
+    def get_plex_collections(plex, library_list, name):
+        if isinstance(library_list, str):
+            library_list = [library_list]
+        elif not isinstance(library_list, list):
+            handle_plex_exception(e, f"{name} must be either a string or a list")
+        
+        result = []
+        for lib in library_list:
+            try:
+                section = plex.library.section(lib)
+                collections = section.collections()
+                for collection in collections:
+                    result.append(collection)
+
+            except plexapi.exceptions.NotFound:
+                handle_plex_exception(e, f"{name} library named {lib} not found in config.json")
+        
+        return result
+
     if os.path.exists("config.json"):
         try:
             config = load_config()
@@ -94,6 +113,7 @@ def plex_setup():
 
         tv = get_plex_library(plex, tv_library, "TV")
         movies = get_plex_library(plex, movie_library, "Movie")
+        collections = get_plex_collections(plex, movie_library , "Collections")
     else:
         handle_plex_exception(e, f"No config.json file found")
 
@@ -252,22 +272,6 @@ def find_in_library(libraries, poster):
                 print(e)
     
     return None, None
-
-
-def find_collection(libraries, poster):
-    collections = []
-    
-    for lib in libraries:
-        try:
-            for collection in lib.collections():
-                if collection.title == poster["title"]:
-                    collections.append(collection)
-        except Exception as e:
-            # Optionally log the exception if needed
-            # print(f"Error retrieving collections: {e}")
-            pass
-
-    return collections if collections else None
 
 
 def update_plex_labels():
@@ -431,44 +435,58 @@ def upload_movie_poster(poster, movies):
             print(f'Unable to upload art for {poster["title"]} in {movie.librarySectionTitle} library.')
 
 
-def upload_collection_poster(poster, movies):
-    collection_items = find_collection(movies, poster)
-    if not collection_items:
+
+def upload_collection_poster(poster):
+    if not collections:
         print(f"No collections found for {poster['title']}.")
         return
 
-    for collection in collection_items:
-        if collection is None:
-            print(f"Skipping upload for {poster['title']}. Failed to process collection data.")
-            return
-        
-        if poster["title"] is None:
-            print(f"Skipping upload for {poster['title']}. Failed to process poster data.")
-            return
-        
-        if check_label_for_item(collection.ratingKey) and not overwrite_labelled_shows:
-            print(f"Skipping upload for {poster['title']} in {collection.librarySectionTitle} library as it already has the label '{append_label}'.")
-            return
+    item_found = False
+    for item in collections:
+        if item.title.lower() == poster['title'].lower():
+            item_found = True
 
-        file_name = "poster.jpg" if asset_folders else f"{poster['title']}.jpg"
-        asset_path = f"collections/{poster['title']}" if asset_folders else "collections"
-    
-        file_path = get_asset_file_path(assets_directory, asset_path, file_name)
-        if os.path.exists(file_path) and not overwrite_existing_assets:
-            print(f"Skipping upload for {poster['title']} as it already exists in {collection.librarySectionTitle} library.")
-            return
-        
-        file_path = save_to_assets_directory(assets_directory, asset_path, file_name, poster["url"])
-        if not file_path:
-            print(f"Skipping upload for {poster['title']} in {collection.librarySectionTitle} library due to download error.")
-            return
+            if check_label_for_item(item.ratingKey) and not overwrite_labelled_shows:
+                print(f"Skipping upload for {poster['title']} in {item.librarySectionTitle} library as it already has the label '{append_label}'.")
+                continue
+
+            # Determine file name and path based on asset type
+            if poster["file_type"] == "poster" or poster["file_type"] == "background":
+                file_name = f"{poster['file_type']}.jpg" if asset_folders else f"{poster['title']}_{poster['file_type']}.jpg"
+                asset_path = f"collections/{poster['title']}" if asset_folders else "collections"
+            else:
+                print(f"Unknown asset type '{poster['file_type']}' for {poster['title']}.")
+                continue
+
+            file_path = get_asset_file_path(assets_directory, asset_path, file_name)
             
-        try:
-            collection.uploadPoster(filepath=file_path)
-            print(f'Uploaded art for {poster["title"]}.')
-            time.sleep(6)  # Timout to prevent spamming servers
-        except Exception as e:
-            print(f'Unable to upload art for {poster["title"]} in {collection.librarySectionTitle} library. Error: {e}')
+            # Check if the asset already exists
+            if os.path.exists(file_path) and not overwrite_existing_assets:
+                print(f"Skipping upload for {poster['title']} as the {poster['file_type']} already exists in {item.librarySectionTitle} library.")
+                continue
+            
+            file_path = save_to_assets_directory(assets_directory, asset_path, file_name, poster["url"])
+            if not file_path:
+                print(f"Skipping upload for {poster['title']} in {item.librarySectionTitle} library due to download error.")
+                continue
+            
+            try:
+                # Upload the poster or background to the collection
+                if poster["file_type"] == 'poster':
+                    item.uploadPoster(filepath=file_path)
+                elif poster["file_type"] == 'background':
+                    item.uploadArt(filepath=file_path)
+                else:
+                    print(f"Unknown asset type '{poster['file_type']}' for {poster['title']}.")
+                    continue
+                print(f'Uploaded {poster["file_type"]} for {poster["title"]}.')
+                time.sleep(6)  # Timeout to prevent spamming servers
+            except Exception as e:
+                print(f'Unable to upload {poster["file_type"]} for {poster["title"]} in {item.librarySectionTitle} library. Error: {e}')
+            break
+    if not item_found:
+        print(f"Item with title '{poster['title']}' not found in collections.")
+
 
 
 def set_posters(url):
@@ -487,7 +505,7 @@ def set_posters(url):
         return
 
     for poster in collectionposters:
-        upload_collection_poster(poster, collections)
+        upload_collection_poster(poster)
 
     for poster in movieposters:
         upload_movie_poster(poster, movies)
@@ -622,7 +640,7 @@ def check_mediux_filter(mediux_filters, filter):
 
 
 def scrape_mediux(soup):
-    base_url = ("https://mediux.pro/_next/image?url=https%3A%2F%2Fapi.mediux.pro%2Fassets%2F")
+    base_url = "https://mediux.pro/_next/image?url=https%3A%2F%2Fapi.mediux.pro%2Fassets%2F"
     quality_suffix = "&w=3840&q=80"
 
     scripts = soup.find_all("script")
@@ -633,76 +651,66 @@ def scrape_mediux(soup):
     collectionposters = []
     mediux_filters = get_mediux_filters()
     title = None
+    poster_data = []
 
+    # Extract and parse the poster data from the script tags
     for script in scripts:
-        if "files" in script.text:
-            if "set" in script.text:
-                if "Set Link\\" not in script.text:
-                    data_dict = parse_string_to_dict(script.text)
-                    poster_data = data_dict["set"]["files"]
+        if "files" in script.text and "set" in script.text and "Set Link\\" not in script.text:
+            data_dict = parse_string_to_dict(script.text)
+            poster_data = data_dict.get("set", {}).get("files", [])
 
+    # Determine media type based on the presence of specific IDs
     for data in poster_data:
-        if (data["show_id"] is not None or data["show_id_backdrop"] is not None or data["episode_id"] is not None or data["season_id"] is not None or data["show_id"] is not None ):
+        if (data.get("show_id") or data.get("show_id_backdrop") or 
+            data.get("episode_id") or data.get("season_id") or 
+            data.get("show_id")):
             media_type = "Show"
         else:
             media_type = "Movie"
 
+    # Process each poster data entry
     for data in poster_data:
+        image_stub = data.get("id")
+        poster_url = f"{base_url}{image_stub}{quality_suffix}"
+
         if media_type == "Show":
-            episodes = data_dict["set"]["show"]["seasons"]
-            show_name = data_dict["set"]["show"]["name"]
+            episodes = data_dict["set"].get("show", {}).get("seasons", [])
+            show_name = data_dict["set"].get("show", {}).get("name", "Unknown")
             try:
-                year = int(data_dict["set"]["show"]["first_air_date"][:4])
-            except:
+                year = int(data_dict["set"]["show"].get("first_air_date", "0000")[:4])
+            except ValueError:
                 year = None
 
-            if data["fileType"] == "title_card":
-                episode_id = data["episode_id"]["id"]
-                season = data["episode_id"]["season_id"]["season_number"]
-                season_data = [ episode for episode in episodes if episode["season_number"] == season][0]
-                episode_data = [ episode for episode in season_data["episodes"] if episode["id"] == episode_id][0]
-                episode = episode_data["episode_number"]
+            if data.get("fileType") == "title_card":
+                episode_id = data.get("episode_id", {}).get("id")
+                season = data.get("episode_id", {}).get("season_id", {}).get("season_number")
+                season_data = next((ep for ep in episodes if ep["season_number"] == season), {})
+                episode_data = next((ep for ep in season_data.get("episodes", []) if ep["id"] == episode_id), {})
+                episode = episode_data.get("episode_number")
                 file_type = "title_card"
-            elif data["fileType"] == "backdrop":
+            elif data.get("fileType") == "backdrop":
                 season = "Backdrop"
                 episode = None
                 file_type = "background"
-            elif data["season_id"] is not None:
-                season_id = data["season_id"]["id"]
-                season_data = [episode for episode in episodes if episode["id"] == season_id][0]
+            elif data.get("season_id"):
+                season_id = data.get("season_id", {}).get("id")
+                season_data = next((ep for ep in episodes if ep["id"] == season_id), {})
                 episode = "Cover"
-                season = season_data["season_number"]
+                season = season_data.get("season_number")
                 file_type = "season_cover"
-            elif data["show_id"] is not None:
+            elif data.get("show_id"):
                 season = "Cover"
                 episode = None
                 file_type = "show_cover"
 
-        elif media_type == "Movie":
-            if data["movie_id"]:
-                if data_dict["set"]["movie"]:
-                    title = data_dict["set"]["movie"]["title"]
-                    year = int(data_dict["set"]["movie"]["release_date"][:4])
-                elif data_dict["set"]["collection"]:
-                    movie_id = data["movie_id"]["id"]
-                    movies = data_dict["set"]["collection"]["movies"]
-                    movie_data = [movie for movie in movies if movie["id"] == movie_id][0]
-                    title = movie_data["title"]
-                    year = int(movie_data["release_date"][:4])
-            elif data["collection_id"]:
-                title = data_dict["set"]["collection"]["collection_name"]
-
-        image_stub = data["id"]
-        poster_url = f"{base_url}{image_stub}{quality_suffix}"
-
-        if media_type == "Show":
-            showposter = {}
-            showposter["title"] = show_name
-            showposter["season"] = season
-            showposter["episode"] = episode
-            showposter["url"] = poster_url
-            showposter["source"] = "mediux"
-            showposter["year"] = year
+            showposter = {
+                "title": show_name,
+                "season": season,
+                "episode": episode,
+                "url": poster_url,
+                "source": "mediux",
+                "year": year
+            }
 
             if check_mediux_filter(mediux_filters=mediux_filters, filter=file_type):
                 showposters.append(showposter)
@@ -710,22 +718,45 @@ def scrape_mediux(soup):
                 print(f"{show_name} - skipping. '{file_type}' is not in 'mediux_filters'")
 
         elif media_type == "Movie":
-            if title:
-                if "Collection" in title:
-                    collectionposter = {}
-                    collectionposter["title"] = title
-                    collectionposter["url"] = poster_url
-                    collectionposter["source"] = "mediux"
-                    collectionposters.append(collectionposter)
-
-                else:
-                    movieposter = {}
-                    movieposter["title"] = title
-                    movieposter["year"] = int(year)
-                    movieposter["url"] = poster_url
-                    movieposter["source"] = "mediux"
-                    movieposters.append(movieposter)
-
+            if data.get("movie_id"):
+                if data.get("movie_id").get("id"):
+                    if data_dict["set"].get("movie"):
+                        title = data_dict["set"]["movie"].get("title", "Unknown")
+                        year = int(data_dict["set"]["movie"].get("release_date", "0000")[:4])
+                    elif data_dict["set"].get("collection"):
+                        movie_id = data.get("movie_id", {}).get("id")
+                        movies = data_dict["set"]["collection"].get("movies", [])
+                        movie_data = next((movie for movie in movies if movie["id"] == movie_id), {})
+                        title = movie_data.get("title", "Unknown")
+                        year = int(movie_data.get("release_date", "0000")[:4])
+                        movieposter = {
+                            "title": title,
+                            "year": int(year),
+                            "url": poster_url,
+                            "source": "mediux"
+                        }
+                        movieposters.append(movieposter)
+            if data.get("collection_id"):
+                if data.get("collection_id").get('id'):
+                    title = data_dict["set"]["collection"].get("collection_name", "Unknown")
+                    if "Collection" in title:
+                        collectionposter = {
+                            "title": title,
+                            "url": poster_url,
+                            "source": "mediux",
+                            "file_type": "poster"
+                        }
+                        collectionposters.append(collectionposter)
+                        if data.get('set_id') and data['set_id'].get('posterCheck'):
+                            background_ID = data['set_id']['posterCheck'][0]['id']
+                            collectionposter_background = {
+                                "title": title,
+                                "url": f"{base_url}{background_ID}{quality_suffix}",
+                                "source": "mediux",
+                                "file_type": "background"
+                            }
+                            collectionposters.append(collectionposter_background)
+                           
     return movieposters, showposters, collectionposters
 
 
