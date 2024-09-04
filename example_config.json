@@ -3,6 +3,7 @@
     "token": "",
     "tv_library": ["TV Shows", "Anime"],
     "movie_library": "Movies",
+    "plex_collections": "Movies",
     "mediux_filters": ["title_card", "background", "season_cover", "show_cover"],
     "append_label": "Overlay",
     "assets_directory": "assets",
