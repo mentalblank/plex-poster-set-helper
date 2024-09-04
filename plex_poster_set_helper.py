@@ -22,6 +22,7 @@ MEDIA_TYPES_PARENT_VALUES = {
     "episode": 2,
     "album": 9,
     "track": 9,
+    "collection": 18,
 }
 
 # Plex Configuration settings
@@ -42,11 +43,11 @@ useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML
 # Data containers
 tv = []
 movies = []
-collections = []
+plex_collections = []
 
 
 def plex_setup():
-    global tv, movies, collections, append_label, overwrite_labelled_shows, assets_directory, overwrite_existing_assets, base_url, token, asset_folders, only_process_new_assets, useragent
+    global tv, movies, plex_collections, append_label, overwrite_labelled_shows, assets_directory, overwrite_existing_assets, base_url, token, asset_folders, only_process_new_assets, useragent
 
     def load_config(filename="config.json"):
         with open(filename) as f:
@@ -67,25 +68,6 @@ def plex_setup():
                 result.append(plex.library.section(lib))
             except plexapi.exceptions.NotFound:
                 handle_plex_exception(e, f"{name} library named not found in config.json")
-        return result
-
-    def get_plex_collections(plex, library_list, name):
-        if isinstance(library_list, str):
-            library_list = [library_list]
-        elif not isinstance(library_list, list):
-            handle_plex_exception(e, f"{name} must be either a string or a list")
-        
-        result = []
-        for lib in library_list:
-            try:
-                section = plex.library.section(lib)
-                collections = section.collections()
-                for collection in collections:
-                    result.append(collection)
-
-            except plexapi.exceptions.NotFound:
-                handle_plex_exception(e, f"{name} library named {lib} not found in config.json")
-        
         return result
 
     if os.path.exists("config.json"):
@@ -114,11 +96,30 @@ def plex_setup():
 
         tv = get_plex_library(plex, tv_library, "TV")
         movies = get_plex_library(plex, movie_library, "Movie")
-        collections = get_plex_collections(plex, plex_collections , "Collections")
+        plex_collections = tv + movies
     else:
         handle_plex_exception(e, f"No config.json file found")
 
 
+def find_collection(libraries, poster):
+    collections = []
+
+    for lib in libraries:
+        try:
+            for collection in lib.collections():
+                if collection.title == poster["title"]:
+                    collections.append(collection)
+                    add_label_rating_key(collection)
+                    
+        except Exception as e:
+            # Optionally log the exception if needed
+            # print(f"Error retrieving collections: {e}")
+            pass
+
+    return collections if collections else None
+
+
+        
 def cook_soup(url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", "Sec-Ch-Ua-Mobile": "?0", "Sec-Ch-Ua-Platform": "Windows", }
@@ -208,7 +209,7 @@ def add_label_rating_key(library_item):
         existing_keys = existing_section.get("keys", [])
 
         if str(library_item.ratingKey) not in existing_keys:
-            existing_keys += [str(library_item.ratingKey)]
+            existing_keys.append(str(library_item.ratingKey))
 
         existing_type = existing_section.get(
             "type", MEDIA_TYPES_PARENT_VALUES[library_item.type]
@@ -285,22 +286,22 @@ def update_plex_labels():
         for rating_key in item["keys"]:
             if not check_label_for_item(rating_key):
                 url = f"{base_url}/library/metadata/{rating_key}"
-                params = {
+                data = {
                     "label.locked": 1,
                     "label[0].tag.tag": append_label,
                 }
 
                 try:
-                    response = requests.put(url, headers=headers, params=params, timeout=10)
+                    response = requests.put(url, headers=headers, data=data, timeout=15)
 
                     if response.status_code == 200:
-                        print(f"Label '{append_label}' applied successfully to show with rating key {rating_key}")
+                        print(f"Label '{append_label}' applied successfully to item with rating key {rating_key}")
                     else:
-                        print(f"Failed to apply label '{append_label}' to show with rating key {rating_key} - {response.status_code}: {response.reason}")
+                        print(f"Failed to apply label '{append_label}' to item with rating key {rating_key} - {response.status_code}: {response.reason}")
                 except requests.Timeout:
-                    print(f"Request to show with rating key {rating_key} timed out.")
+                    print(f"Request to item with rating key {rating_key} timed out.")
                 except requests.RequestException as e:
-                    print(f"Error updating labels for show with rating key {rating_key}: {e}")
+                    print(f"Error updating labels for item with rating key {rating_key}: {e}")
 
 
 def check_label_for_item(rating_key):
@@ -454,14 +455,16 @@ def upload_movie_poster(poster, movies):
             break
 
 
-
-def upload_collection_poster(poster):
-    if not collections:
+def upload_collection_poster(poster, plex_collections):
+    # Use find_collection to get matching collections
+    collection_items = find_collection(plex_collections, poster)
+    
+    if not collection_items:
         print(f"No collections found for {poster['title']}.")
         return
 
     item_found = False
-    for item in collections:
+    for item in collection_items:
         if item.title.lower() == poster['title'].lower():
             item_found = True
 
@@ -470,7 +473,7 @@ def upload_collection_poster(poster):
                 return
 
             # Determine asset type
-            asset_type = "poster" if poster.get("source") == "posterdb" else {"poster": "poster", "background": "background", "backdrop": "background"}.get(poster.get("file_type"), "poster")
+            asset_type = ("poster" if poster.get("source") == "posterdb"  else {"poster": "poster", "background": "background", "backdrop": "background"}.get(poster.get("file_type"), "poster") )
 
             if asset_type in {"poster", "background"}:
                 asset_path = f"collections/{poster['title']}" if asset_folders else "collections"
@@ -507,9 +510,9 @@ def upload_collection_poster(poster):
             except Exception as e:
                 print(f'Unable to upload {asset_type} for {poster["title"]} in {item.librarySectionTitle} library. Error: {e}')
             break
+
     if not item_found:
         print(f"Item with title '{poster['title']}' not found in collections.")
-
 
 
 def set_posters(url):
@@ -528,7 +531,7 @@ def set_posters(url):
         return
 
     for poster in collectionposters:
-        upload_collection_poster(poster)
+        upload_collection_poster(poster, plex_collections)
 
     for poster in movieposters:
         upload_movie_poster(poster, movies)
