@@ -34,7 +34,7 @@ assets_directory = "assets"
 asset_folders = True
 
 # App settings
-append_label = "Overlay"
+append_label = ["Overlay"]
 overwrite_existing_assets = False
 overwrite_labelled_shows = False
 only_process_new_assets = True
@@ -79,6 +79,7 @@ def plex_setup():
             movie_library = config.get("movie_library")
             plex_collections = config.get("plex_collections")
             append_label = config.get("append_label", "Overlay")
+            append_label = [append_label] if isinstance(append_label, str) else (append_label if isinstance(append_label, list) else ["Overlay"])
             assets_directory = config.get("assets_directory", "assets")
             overwrite_existing_assets = config.get("overwrite_existing_assets", False)
             overwrite_labelled_shows = config.get("overwrite_labelled_shows", False)
@@ -100,24 +101,30 @@ def plex_setup():
     else:
         handle_plex_exception(e, f"No config.json file found")
 
-
 def find_collection(libraries, poster):
     collections = []
+    poster_title = poster["title"].strip().lower()
+    search_titles = [
+        poster_title,                          # Search with exact title
+        poster_title.replace(' collection', ''),  # Search without ' collection'
+        poster_title + ' collection'
+    ]
 
     for lib in libraries:
         try:
-            for collection in lib.collections():
-                if collection.title == poster["title"]:
+            # Get all collections from the library
+            all_collections = lib.collections()
+            for collection in all_collections:
+                if collection.title.strip().lower() in search_titles:
                     collections.append(collection)
-                    add_label_rating_key(collection)
-                    
+                    break  # No need to check other titles for this collection
+
         except Exception as e:
-            # Optionally log the exception if needed
-            # print(f"Error retrieving collections: {e}")
-            pass
+            # Log the exception with a message
+            print(f"Error retrieving collections from library '{lib.title}': {e}")
+            continue  # Continue processing other libraries
 
     return collections if collections else None
-
 
         
 def cook_soup(url):
@@ -203,22 +210,21 @@ def parse_string_to_dict(input_string):
 
 
 def add_label_rating_key(library_item):
-    existing_section = LABEL_RATING_KEYS.get(library_item.librarySectionID, {})
+    # Retrieve existing labels for the item
+    existing_labels = [label.tag for label in library_item.labels]
 
-    if append_label and append_label not in library_item.labels:
-        existing_keys = existing_section.get("keys", [])
+    # Add new labels that do not already exist
+    new_labels = [label for label in append_label if label not in existing_labels]
 
-        if str(library_item.ratingKey) not in existing_keys:
-            existing_keys.append(str(library_item.ratingKey))
-
-        existing_type = existing_section.get(
-            "type", MEDIA_TYPES_PARENT_VALUES[library_item.type]
-        )
-
-        LABEL_RATING_KEYS[library_item.librarySectionID] = {
-            "keys": existing_keys,
-            "type": existing_type,
-        }
+    if new_labels:
+        try:
+            # Add each new label individually
+            for label in new_labels:
+                library_item.addLabel(label)
+            library_item.reload()  # Refresh the item's data after editing
+            print(f"Labels {new_labels} added to item '{library_item.title}'.")
+        except Exception as e:
+            print(f"Error adding labels to item '{library_item.title}': {e}")
 
 
 def get_file_path_from_plex(rating_key):
@@ -264,7 +270,6 @@ def find_in_library(libraries, poster):
             library_item = lib.get(poster["title"], **kwargs)
             
             if library_item:
-                add_label_rating_key(library_item)
                 show_path = get_file_path_from_plex(library_item.ratingKey)
                 return library_item, show_path
 
@@ -276,34 +281,6 @@ def find_in_library(libraries, poster):
     return None, None
 
 
-def update_plex_labels():
-    headers = {"X-Plex-Token": token}
-
-    if not LABEL_RATING_KEYS:
-        return
-
-    for section_id, item in LABEL_RATING_KEYS.items():
-        for rating_key in item["keys"]:
-            if not check_label_for_item(rating_key):
-                url = f"{base_url}/library/metadata/{rating_key}"
-                data = {
-                    "label.locked": 1,
-                    "label[0].tag.tag": append_label,
-                }
-
-                try:
-                    response = requests.put(url, headers=headers, data=data, timeout=15)
-
-                    if response.status_code == 200:
-                        print(f"Label '{append_label}' applied successfully to item with rating key {rating_key}")
-                    else:
-                        print(f"Failed to apply label '{append_label}' to item with rating key {rating_key} - {response.status_code}: {response.reason}")
-                except requests.Timeout:
-                    print(f"Request to item with rating key {rating_key} timed out.")
-                except requests.RequestException as e:
-                    print(f"Error updating labels for item with rating key {rating_key}: {e}")
-
-
 def check_label_for_item(rating_key):
     headers = {"X-Plex-Token": token}
     url = f"{base_url}/library/metadata/{rating_key}"
@@ -311,17 +288,19 @@ def check_label_for_item(rating_key):
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-
         root = ET.fromstring(response.content)
-        labels = {label.get("tag") for label in root.findall(".//Label")}
-        
-        return append_label in labels
+
+        # Extract labels
+        labels = {label.get("tag").strip() for label in root.findall(".//Label") if label.get("tag")}
+
+        # Check if any of the labels in append_label exist in the labels
+        return any(label in labels for label in append_label)
 
     except requests.RequestException as e:
         print(f"Error checking label for item with rating key {rating_key}: {e}")
     except ET.ParseError as e:
         print(f"Failed to parse XML response for rating key {rating_key}: {e}")
-    
+
     return False
 
 
@@ -333,7 +312,7 @@ def upload_tv_poster(poster, tv):
         return
     
     if check_label_for_item(tv_show.ratingKey) and not overwrite_labelled_shows:
-        print(f"Skipping upload for {show_path} as it already has the label '{append_label}'.")
+        print(f"Skipping upload for {poster['title']} (Key: {tv_show.ratingKey}) as it already has the label '{append_label}'.")
         return
     
     season_str = str(poster.get("season", "")).zfill(2)
@@ -359,7 +338,7 @@ def upload_tv_poster(poster, tv):
     # Handle existing file scenarios
     if os.path.exists(file_path) and not overwrite_existing_assets:
         if only_process_new_assets:
-            print(f"Skipping upload for {poster['title']} as only processing new assets in {tv_show.librarySectionTitle} library.")
+            print(f"Skipping upload for {poster['title']} (Key: {tv_show.ratingKey}) as only processing new assets in {tv_show.librarySectionTitle} library.")
             return
         print(f"Using existing file for upload to {poster['title']} in {tv_show.librarySectionTitle} library.")
     else:
@@ -394,12 +373,17 @@ def upload_tv_poster(poster, tv):
                 upload_target.uploadArt(filepath=file_path)
             except:
                 print("Unable to upload background.")
+                return
         else:
             try:
                 upload_target.uploadPoster(filepath=file_path)
             except:
                 print(f"Unable to upload last poster. {file_path}")
-            time.sleep(6)  # Timout to prevent spamming servers
+                return
+                
+        # Add labels to the collection item after upload
+        add_label_rating_key(tv_show)
+        time.sleep(6)  # Timout to prevent spamming servers
                 
     except Exception as e:
         print(f"Error uploading {poster['title']} - {e}")
@@ -413,7 +397,7 @@ def upload_movie_poster(poster, movies):
         
     for movie in movies:
         if check_label_for_item(movie.ratingKey) and not overwrite_labelled_shows:
-            print(f"Skipping upload for {poster['title']} in {movie.librarySectionTitle} library as it already has the label '{append_label}'.")
+            print(f"Skipping upload for {poster['title']} (Key: {movie.ratingKey}) in {movie.librarySectionTitle} library as it already has the label '{append_label}'.")
             return
         
         # Determine asset type
@@ -431,13 +415,13 @@ def upload_movie_poster(poster, movies):
         
         if os.path.exists(file_path) and not overwrite_existing_assets:
             if only_process_new_assets:
-                print(f"Skipping upload for {poster['title']} as the {asset_type} already exists in {movie.librarySectionTitle} library.")
+                print(f"Skipping upload for {poster['title']} (Key: {movie.ratingKey}) as the {asset_type} already exists in {movie.librarySectionTitle} library.")
                 return
             print(f"Using existing file for upload to {poster['title']} in {movie.librarySectionTitle} library.")
         else:
             file_path = save_to_assets_directory(assets_directory, asset_path, file_name, poster["url"])
             if not file_path:
-                print(f"Skipping upload for {poster['title']} in {movie.librarySectionTitle} library due to download error.")
+                print(f"Skipping upload for {poster['title']} (Key: {movie.ratingKey}) in {movie.librarySectionTitle} library due to download error.")
                 return
                 
         try:
@@ -449,6 +433,10 @@ def upload_movie_poster(poster, movies):
                 print(f"Unknown asset type '{asset_type}' for {poster['title']}.")
                 return
             print(f'Uploaded {asset_type} for {poster["title"]}.')
+                
+            # Add labels to the collection item after upload
+            add_label_rating_key(movie)
+                
             time.sleep(6)  # Timeout to prevent spamming servers
         except Exception as e:
             print(f'Unable to upload {asset_type} for {poster["title"]} in {movie.librarySectionTitle} library. Error: {e}')
@@ -462,14 +450,21 @@ def upload_collection_poster(poster, plex_collections):
     if not collection_items:
         print(f"No collections found for {poster['title']}.")
         return
+    
+    poster_title = poster['title'].lower()
+    search_titles = [
+        poster_title,                          # Search with exact title
+        poster_title.replace(' collection', ''),  # Search without ' collection'
+        poster_title + ' collection'
+    ]
 
     item_found = False
     for item in collection_items:
-        if item.title.lower() == poster['title'].lower():
+        if item.title.lower() in search_titles:
             item_found = True
 
             if check_label_for_item(item.ratingKey) and not overwrite_labelled_shows:
-                print(f"Skipping upload for {poster['title']} in {item.librarySectionTitle} library as it already has the label '{append_label}'.")
+                print(f"Skipping upload for {poster['title']} (Key: {item.ratingKey}) in {item.librarySectionTitle} library as it already has the label '{append_label}'.")
                 return
 
             # Determine asset type
@@ -487,13 +482,13 @@ def upload_collection_poster(poster, plex_collections):
             # Check if the asset already exists
             if os.path.exists(file_path) and not overwrite_existing_assets:
                 if only_process_new_assets:
-                    print(f"Skipping upload for {poster['title']} as the {asset_type} already exists in {item.librarySectionTitle} library.")
-                    return
+                    print(f"Skipping upload for {poster['title']} (Key: {item.ratingKey}) as the {asset_type} already exists in {item.librarySectionTitle} library.")
+                    #return
                 print(f"Using existing file for upload to {poster['title']} in {item.librarySectionTitle} library.")
             else:
                 file_path = save_to_assets_directory(assets_directory, asset_path, file_name, poster["url"])
                 if not file_path:
-                    print(f"Skipping upload for {poster['title']} in {item.librarySectionTitle} library due to download error.")
+                    print(f"Skipping upload for {poster['title']} (Key: {item.ratingKey}) in {item.librarySectionTitle} library due to download error.")
                     return
             
             try:
@@ -506,6 +501,10 @@ def upload_collection_poster(poster, plex_collections):
                     print(f"Unknown asset type '{asset_type}' for {poster['title']}.")
                     return
                 print(f'Uploaded {asset_type} for {poster["title"]}.')
+                
+                # Add labels to the collection item after upload
+                add_label_rating_key(item)
+                
                 time.sleep(6)  # Timeout to prevent spamming servers
             except Exception as e:
                 print(f'Unable to upload {asset_type} for {poster["title"]} in {item.librarySectionTitle} library. Error: {e}')
@@ -516,8 +515,6 @@ def upload_collection_poster(poster, plex_collections):
 
 
 def set_posters(url):
-    print(f"Setting posters for URL: {url}")
-
     result = scrape(url)
 
     if not result or len(result) != 3:
@@ -538,8 +535,6 @@ def set_posters(url):
 
     for poster in showposters:
         upload_tv_poster(poster, tv)
-
-    update_plex_labels()
 
 
 
@@ -755,28 +750,28 @@ def scrape_mediux(soup):
                         movie_data = next((movie for movie in movies if movie["id"] == movie_id), {})
                         title = movie_data.get("title", "Unknown")
                         year = int(movie_data.get("release_date", "0000")[:4])
-                        movieposter = {
-                            "title": title,
-                            "year": int(year),
-                            "url": poster_url,
-                            "source": "mediux",
-                            "file_type": "poster"
-                        }
-                        movieposters.append(movieposter)
-                        # Check and add movie backdrop
-                        for file in data_dict["set"].get("files", []):
-                            movie_id_backdrop = file.get("movie_id_backdrop")
-                            if movie_id_backdrop and isinstance(movie_id_backdrop, dict):
-                                backdrop_id = movie_id_backdrop.get("id")
-                                if backdrop_id and backdrop_id == movie_id:
-                                    backdrop_url = f"{base_url}{file['id']}{quality_suffix}"
-                                    movieposter_background = {
-                                        "title": title,
-                                        "url": backdrop_url,
-                                        "source": "mediux",
-                                        "file_type": "background"
-                                    }
-                                    movieposters.append(movieposter_background)
+                    movieposter = {
+                        "title": title,
+                        "year": int(year),
+                        "url": poster_url,
+                        "source": "mediux",
+                        "file_type": "poster"
+                    }
+                    movieposters.append(movieposter)
+                    # Check and add movie backdrop
+                    for file in data_dict["set"].get("files", []):
+                        movie_id_backdrop = file.get("movie_id_backdrop")
+                        if movie_id_backdrop and isinstance(movie_id_backdrop, dict):
+                            backdrop_id = movie_id_backdrop.get("id")
+                            if backdrop_id and backdrop_id == movie_id:
+                                backdrop_url = f"{base_url}{file['id']}{quality_suffix}"
+                                movieposter_background = {
+                                    "title": title,
+                                    "url": backdrop_url,
+                                    "source": "mediux",
+                                    "file_type": "background"
+                                }
+                                movieposters.append(movieposter_background)
             if data.get("collection_id"):
                 if data.get("collection_id").get('id'):
                     title = data_dict["set"]["collection"].get("collection_name", "Unknown")
@@ -1006,12 +1001,9 @@ def process_ids(set_ids, boxset_ids):
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    
     plex_setup()
-
     if len(sys.argv) > 1:
         command = sys.argv[1].lower()
-        
         # Handle 'bulk' command
         if command == "bulk":
             if len(sys.argv) > 2:
@@ -1019,21 +1011,16 @@ if __name__ == "__main__":
                 parse_urls(file_path)
             else:
                 print("Please provide the path to the .txt file.")
-        
         elif "/user/" in command:
             if "theposterdb.com" in command:
                 scrape_entire_user(command)
             elif "mediux.pro" in command:
                 scrape_mediux_user(command)
-        
         else:
             set_posters(command)
-
     else:
         while True:
-            user_input = input(
-                "Enter a ThePosterDB set (or user) or a MediUX set URL, or type 'stop' to exit: "
-            ).strip()
+            user_input = input("Enter a ThePosterDB set (or user) or a MediUX set URL, or type 'stop' to exit: ").strip()
             
             # Exit the loop if user inputs 'stop'
             if user_input.lower() == "stop":
@@ -1058,6 +1045,5 @@ if __name__ == "__main__":
                     scrape_entire_user(user_input)
                 elif "mediux.pro" in user_input.lower():
                     scrape_mediux_user(user_input)
-            
             else:
                 set_posters(user_input)
