@@ -942,19 +942,21 @@ def scrape_entire_user(url):
 
 def scrape_mediux_user(url):
     #print(f"Attempting to scrape '{url}' ...please be patient.")
+    base_url = url.split('?')[0]
     
-    pages = scrape_mediux_user_info(url)
+    if not base_url.endswith('/sets'):
+        base_url = base_url.rstrip('/') + '/sets'
+
+    pages = scrape_mediux_user_info(base_url)
     if pages is None:
         print("Error retrieving page count.")
         return
 
-    print(f"Found {pages} pages for '{url}'")
-    base_url = url.split("?")[0]
-    
+    #print(f"Found {pages} pages for '{base_url}'")
     all_set_ids, all_boxset_ids = [], []
     for page in range(1, pages + 1):
-        #print(f"Scraping page {page}.")
         page_url = f"{base_url}?page={page}"
+        #print(f"Scraping page {page}.")
         page_soup = cook_soup(page_url)
         
         set_ids, boxset_ids = extract_ids_from_script(page_soup)
