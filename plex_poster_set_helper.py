@@ -141,7 +141,7 @@ def ensure_directory(directory_path):
     if not os.path.exists(directory_path):
         try:
             os.makedirs(directory_path, mode=0o755)
-            print(f"Directory created: {directory_path}")
+            #print(f"Directory created: {directory_path}")
         except OSError as e:
             print(f"Failed to create directory: {e}")
 
@@ -154,7 +154,7 @@ def save_to_assets_directory(assets_dir, plex_folder, file_name, file_url):
         if not overwrite_existing_assets:
             print(f"File already exists and overwriting is disabled: {file_path}")
             return file_path
-        print(f"Overwriting existing file: {file_path}")
+        #print(f"Overwriting existing file: {file_path}")
 
     # Ensure the directory exists
     plex_folder_path = os.path.dirname(file_path)
@@ -170,7 +170,7 @@ def save_to_assets_directory(assets_dir, plex_folder, file_name, file_url):
             for chunk in response.iter_content(chunk_size=8192):
                 file.write(chunk)
         
-        print(f"File downloaded and saved to: {file_path}")
+        #print(f"File downloaded and saved to: {file_path}")
         return file_path
     except requests.RequestException as e:
         print(f"Failed to download file. Error: {e}")
@@ -216,7 +216,7 @@ def add_label_rating_key(library_item):
             for label in new_labels:
                 library_item.addLabel(label)
             library_item.reload()  # Refresh the item's data after editing
-            print(f"Labels {new_labels} added to item '{library_item.title}'.")
+            #print(f"Labels {new_labels} added to item '{library_item.title}'.")
         except Exception as e:
             print(f"Error adding labels to item '{library_item.title}': {e}")
 
@@ -320,11 +320,11 @@ def upload_tv_poster(poster, tv):
     tv_show, show_path = find_in_library(tv, poster)
     
     if tv_show is None or show_path is None:
-        print(f"{poster['title']} not found in tv libraries or failed to load path.")
+        print(f"{poster['title']} not found in TV libraries or failed to load path.")
         return
     
     if check_label_for_item(tv_show.ratingKey) and not overwrite_labelled_shows:
-        print(f"Skipping upload for {poster['title']} (Key: {tv_show.ratingKey}) as it already has the label '{append_label}'.")
+        #print(f"Skipping upload for {poster['title']} as it already has the label '{append_label}'.")
         return
     
     season_str = str(poster.get("season", "")).zfill(2)
@@ -350,57 +350,62 @@ def upload_tv_poster(poster, tv):
     # Handle existing file scenarios
     if os.path.exists(file_path) and not overwrite_existing_assets:
         if only_process_new_assets:
-            print(f"Skipping upload for {poster['title']} (Key: {tv_show.ratingKey}) as only processing new assets in {tv_show.librarySectionTitle} library.")
+            #print(f"Skipping upload for {poster['title']} as only processing new assets.")
             return
-        print(f"Using existing file for upload to {poster['title']} (Key: {tv_show.ratingKey}) in {tv_show.librarySectionTitle} library.")
+        #print(f"Using existing file for upload to {poster['title']}.")
     else:
         file_path = save_to_assets_directory(assets_directory, asset_path, file_name, poster["url"])
         if file_path is None:
-            print(f"Skipping upload for {poster['title']} (Key: {tv_show.ratingKey}) due to download error.")
+            print(f"Skipping upload for {poster['title']} due to download error.")
             return
-    
-    # Upload logic
     try:
-        if poster["season"] == "Cover":
+        if poster["season"] in {"Cover", "Backdrop"}:
             upload_target = tv_show
-            print(f"Uploading cover art for {poster['title']} (Key: {tv_show.ratingKey}) - {poster['season']} in {tv_show.librarySectionTitle} library.")
-        elif poster["season"] == "Backdrop":
-            upload_target = tv_show
-            print(f"Uploading cover art for {poster['title']} (Key: {tv_show.ratingKey}) - {poster['season']} in {tv_show.librarySectionTitle} library.")
+            print(f"Uploading art for {poster['title']} - {poster['season']}.")
         elif poster["season"] == 0:
-                upload_target = tv_show.season("Specials")
-                print(f"Uploading art for {poster['title']} (Key: {tv_show.ratingKey}) - Specials in {tv_show.librarySectionTitle} library.")
-        elif poster["season"] >= 1:
-            if poster["episode"] in {"Cover", None}:
-                upload_target = tv_show.season(poster["season"])
-                print(f"Uploading cover art for {poster['title']} (Key: {tv_show.ratingKey}) - {poster['season']} in {tv_show.librarySectionTitle} library.")
-            elif poster["episode"] is not None:
-                upload_target = tv_show.season(poster["season"]).episode(poster["episode"])
-                print(f"Uploading art for {poster['title']} (Key: {tv_show.ratingKey}) - Season {poster['season']} Episode {poster['episode']} in {tv_show.librarySectionTitle} library.")
-            else:
-                print(f"Skipping upload for {poster['url']} due to sorting error.")
-                return
-        if poster["season"] == "Backdrop":
             try:
-                upload_target.uploadArt(filepath=file_path)
-                upload_target.lockArt()
-            except:
-                print("Unable to upload background.")
+                upload_target = tv_show.season("Specials")
+                print(f"Uploading art for {poster['title']} - Specials.")
+                if poster["episode"] not in {"Cover", None}:
+                    upload_target = upload_target.episode(poster["episode"])
+                    print(f"Uploading art for {poster['title']} - Specials Episode {poster['episode']}.")
+            except Exception:
+                #print(f"Episode {poster['episode']} not found in Season {poster['season']} for {poster['title']}. Skipping upload.")
+                return 
+        elif poster["season"] >= 1:
+            try:
+                season = tv_show.season(poster["season"])
+                if poster["episode"] in {"Cover", None}:
+                    upload_target = season
+                    print(f"Uploading art for {poster['title']} - Season {poster['season']}.")
+                else:
+                    upload_target = season.episode(poster["episode"])
+                    print(f"Uploading art for {poster['title']} - Season {poster['season']} Episode {poster['episode']}.")
+            except Exception:
+                #print(f"Episode {poster['episode']} not found in Season {poster['season']} for {poster['title']}. Skipping upload.")
                 return
         else:
-            try:
+            print(f"Skipping upload for {poster['url']} due to sorting error.")
+            return
+
+        # Upload art
+        try:
+            if poster["season"] == "Backdrop":
+                upload_target.uploadArt(filepath=file_path)
+                upload_target.lockArt()
+            else:
                 upload_target.uploadPoster(filepath=file_path)
                 upload_target.lockPoster()
-            except:
-                print(f"Unable to upload last poster. {file_path}")
-                return
-                
-        # Add labels to the collection item after upload
+        except Exception as e:
+            print(f"Unable to upload art for {poster['title']}. Error: {e}")
+            return
+        
+        # Add labels and delay
         add_label_rating_key(tv_show)
-        time.sleep(6)  # Timout to prevent spamming servers
-                
+        time.sleep(6)
     except Exception as e:
         print(f"Error uploading {poster['title']} - {e}")
+
 
 
 def upload_movie_poster(poster, movies):
@@ -411,7 +416,7 @@ def upload_movie_poster(poster, movies):
         
     for movie in movies:
         if check_label_for_item(movie.ratingKey) and not overwrite_labelled_shows:
-            print(f"Skipping upload for {poster['title']} (Key: {movie.ratingKey}) in {movie.librarySectionTitle} library as it already has the label '{append_label}'.")
+            #print(f"Skipping upload for {poster['title']} as it already has the label '{append_label}'.")
             break
         
         # Determine asset type
@@ -429,13 +434,13 @@ def upload_movie_poster(poster, movies):
         
         if os.path.exists(file_path) and not overwrite_existing_assets:
             if only_process_new_assets:
-                print(f"Skipping upload for {poster['title']} (Key: {movie.ratingKey}) as the {asset_type} already exists in {movie.librarySectionTitle} library.")
+                #print(f"Skipping upload for {poster['title']} as the {asset_type} already exists.")
                 break
-            print(f"Using existing file for upload to {poster['title']} (Key: {movie.ratingKey}) in {movie.librarySectionTitle} library.")
+            #print(f"Using existing file for upload to {poster['title']}.")
         else:
             file_path = save_to_assets_directory(assets_directory, asset_path, file_name, poster["url"])
             if not file_path:
-                print(f"Skipping upload for {poster['title']} (Key: {movie.ratingKey}) in {movie.librarySectionTitle} library due to download error.")
+                #print(f"Skipping upload for {poster['title']} due to download error.")
                 break
                 
         try:
@@ -448,14 +453,14 @@ def upload_movie_poster(poster, movies):
             else:
                 print(f"Unknown asset type '{asset_type}' for {poster['title']}.")
                 break
-            print(f'Uploaded {asset_type} for {poster["title"]} (Key: {movie.ratingKey}).')
+            print(f'Uploaded {asset_type} for {poster["title"]}.')
                 
             # Add labels to the collection item after upload
             add_label_rating_key(movie)
                 
             time.sleep(6)  # Timeout to prevent spamming servers
         except Exception as e:
-            print(f'Unable to upload {asset_type} for {poster["title"]} in {movie.librarySectionTitle} library. Error: {e}')
+            print(f'Unable to upload {asset_type} for {poster["title"]}. Error: {e}')
             break
 
 
@@ -473,7 +478,7 @@ def upload_collection_poster(poster, plex_collections):
             item_found = True
 
             if check_label_for_item(item.ratingKey) and not overwrite_labelled_shows:
-                print(f"Skipping upload for {poster['title']} (Key: {item.ratingKey}) in {item.librarySectionTitle} library as it already has the label '{append_label}'.")
+                #print(f"Skipping upload for {poster['title']} as it already has the label '{append_label}'.")
                 break
 
             # Determine asset type
@@ -491,13 +496,13 @@ def upload_collection_poster(poster, plex_collections):
             # Check if the asset already exists
             if os.path.exists(file_path) and not overwrite_existing_assets:
                 if only_process_new_assets:
-                    print(f"Skipping upload for {poster['title']} (Key: {item.ratingKey}) as the {asset_type} already exists in {item.librarySectionTitle} library.")
+                    #print(f"Skipping upload for {poster['title']} as the {asset_type} already exists.")
                     break
-                print(f"Using existing file for upload to {poster['title']} in {item.librarySectionTitle} library.")
+                #print(f"Using existing file for upload to {poster['title']}.")
             else:
                 file_path = save_to_assets_directory(assets_directory, asset_path, file_name, poster["url"])
                 if not file_path:
-                    print(f"Skipping upload for {poster['title']} (Key: {item.ratingKey}) in {item.librarySectionTitle} library due to download error.")
+                    print(f"Skipping upload for {poster['title']} due to download error.")
                     break
             
             try:
@@ -511,14 +516,14 @@ def upload_collection_poster(poster, plex_collections):
                 else:
                     print(f"Unknown asset type '{asset_type}' for {poster['title']}.")
                     break
-                print(f'Uploaded {asset_type} for {poster["title"]} (Key: {item.ratingKey}).')
+                print(f'Uploaded {asset_type} for {poster["title"]}.')
                 
                 # Add labels to the collection item after upload
                 add_label_rating_key(item)
                 
                 time.sleep(6)  # Timeout to prevent spamming servers
             except Exception as e:
-                print(f'Unable to upload {asset_type} for {poster["title"]} (Key: {item.ratingKey}) in {item.librarySectionTitle} library. Error: {e}')
+                print(f'Unable to upload {asset_type} for {poster["title"]}. Error: {e}')
             break
 
     if not item_found:
@@ -535,7 +540,7 @@ def set_posters(url):
     movieposters, showposters, collectionposters = result
 
     if not any([movieposters, showposters, collectionposters]):
-        print("No posters found.")
+        #print("No posters found.")
         return
 
     for poster in collectionposters:
@@ -573,7 +578,7 @@ def scrape_mediux_user_info(base_url):
 
     while True:
         page_url = f"{base_url}?page={current_page}"
-        print(f"Processing page: {current_page}")
+        #print(f"Processing page: {current_page}")
         soup = cook_soup(page_url)
 
         # Extract all page numbers from links
@@ -749,8 +754,8 @@ def scrape_mediux(soup):
 
             if check_mediux_filter(mediux_filters=mediux_filters, filter=file_type):
                 showposters.append(showposter)
-            else:
-                print(f"{show_name} - skipping. '{file_type}' is not in 'mediux_filters'")
+            #else:
+                #print(f"{show_name} - skipping. '{file_type}' is not in 'mediux_filters'")
 
         elif media_type == "Movie":
             if data.get("movie_id"):
@@ -836,7 +841,7 @@ def process_boxset_url(boxset_id, soup2):
         return []
 
     set_ids = [item["id"] for item in data_dict["boxset"]["sets"]]
-    print(f"Extracted set IDs: {set_ids}")
+    #print(f"Extracted set IDs: {set_ids}")
 
     results = []
     for set_id in set_ids:
@@ -873,7 +878,7 @@ def scrape(url):
 
     elif "mediux.pro" in url:
         if "/boxsets/" in url:
-            print("Detected Mediux Boxset URL.")
+            #print("Detected Mediux Boxset URL.")
             boxset_id = url.split("/")[-1]
             soup = cook_soup(url)
             return process_boxset_url(boxset_id, soup)
@@ -881,14 +886,14 @@ def scrape(url):
             soup = cook_soup(url)
             return scrape_mediux_user(soup)
         elif "/sets/" in url:
-            print("Detected Mediux Set URL.")
+            #print("Detected Mediux Set URL.")
             soup = cook_soup(url)
             return scrape_mediux(soup)
         else:
             sys.exit("Invalid Mediux URL. Check the link you are inputting.")
 
     elif ".html" in url:
-        print("Detected local HTML file.")
+        #print("Detected local HTML file.")
         with open(url, "r", encoding="utf-8") as file:
             html_content = file.read()
         soup = BeautifulSoup(html_content, "html.parser")
@@ -930,13 +935,13 @@ def scrape_entire_user(url):
 
     base_url = url.split("?")[0]
     for page in range(1, pages + 1):
-        print(f"Scraping page {page}.")
+        #print(f"Scraping page {page}.")
         page_url = f"{base_url}?section=uploads&page={page}"
         set_posters(page_url)
 
 
 def scrape_mediux_user(url):
-    print(f"Attempting to scrape '{url}' ...please be patient.")
+    #print(f"Attempting to scrape '{url}' ...please be patient.")
     
     pages = scrape_mediux_user_info(url)
     if pages is None:
@@ -948,7 +953,7 @@ def scrape_mediux_user(url):
     
     all_set_ids, all_boxset_ids = [], []
     for page in range(1, pages + 1):
-        print(f"Scraping page {page}.")
+        #print(f"Scraping page {page}.")
         page_url = f"{base_url}?page={page}"
         page_soup = cook_soup(page_url)
         
@@ -959,8 +964,8 @@ def scrape_mediux_user(url):
     unique_set_ids = list(set(all_set_ids))
     unique_boxset_ids = list(set(all_boxset_ids))
     
-    print("Processing Sets:", unique_set_ids)
-    print("Processing Box Sets:", unique_boxset_ids)
+    #print("Processing Sets:", unique_set_ids)
+    #print("Processing Box Sets:", unique_boxset_ids)
     process_ids(unique_set_ids, unique_boxset_ids)
 
 
