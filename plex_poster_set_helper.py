@@ -714,10 +714,9 @@ def scrape_mediux(soup):
             episodes = data_dict["set"].get("show", {}).get("seasons", [])
             show_name = data_dict["set"].get("show", {}).get("name", "Unknown")
             show_tvdb_id = data_dict["set"].get("show", {}).get("tvdb_id")
-            try:
-                year = int(data_dict["set"]["show"].get("first_air_date", "0000")[:4])
-            except ValueError:
-                year = None
+            first_air_date = data_dict["set"]["show"].get("first_air_date", "0000")
+            year = int(first_air_date.split('-')[0] if first_air_date and '-' in first_air_date else first_air_date[:4]) if first_air_date else 0000
+
 
             if data.get("fileType") == "title_card":
                 episode_id = data.get("episode_id", {}).get("id")
@@ -763,12 +762,16 @@ def scrape_mediux(soup):
                     movie_id = data.get("movie_id", {}).get("id")
                     if data_dict["set"].get("movie"):
                         title = data_dict["set"]["movie"].get("title", "Unknown")
-                        year = int(data_dict["set"]["movie"].get("release_date", "0000")[:4])
+                        release_date = data_dict["set"]["movie"].get("release_date", "0000")
+                        year = int(release_date.split('-')[0]) if release_date and '-' in release_date else int(release_date[:4]) if release_date else 0000
                     elif data_dict["set"].get("collection"):
                         movies = data_dict["set"]["collection"].get("movies", [])
                         movie_data = next((movie for movie in movies if movie["id"] == movie_id), {})
                         title = movie_data.get("title", "Unknown")
-                        year = int(movie_data.get("release_date", "0000")[:4])
+                        release_date = movie_data.get("release_date", "0000")
+                        year = int(release_date.split('-')[0]) if release_date and '-' in release_date else int(release_date[:4]) if release_date else 0000
+                    else:
+                        return
                     movieposter = {
                         "media_type": media_type,
                         "title": title,
