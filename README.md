@@ -1,4 +1,6 @@
-# plex-poster-set-helper (Kometa-Style Assets & Mediux Boxset/User Compatible)
+# plex-poster-set-helper 
+
+### (Kometa-style assets & MediUX boxset/user compatible)
 
 plex-poster-set-helper is a tool to help upload sets of posters from ThePosterDB or MediUX to your Plex server in seconds!
 This fork was created for my own personal use. There may or may not be updates / bugfixes.
