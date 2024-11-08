@@ -17,9 +17,9 @@ This fork was created for my own personal use. There may or may not be updates /
         - "append_label": "Overlay" (This label is applied in Plex to all items with assets applied through the script).
         - "assets_directory": "assets", (Asset folder name, located in the same folder as the script)
         - "asset_folders": true, (Kometa style asset folders)
-        - "overwrite_existing_assets": false, (Overwrite saved assets with new ones from scraped source)
-        - "overwrite_labelled_shows": false (If false will not touch any show with the "Overlay" label in Plex)
-		- "only_process_new_assets" true (Combined with overwrite_labelled_shows (true) will only update posters for items in labelled shows that do not already have assets saved)
+        - "overwrite_existing_assets": false, (Overwrite saved assets with new ones from scraped source) (Can be passed via command line using -OE)
+        - "overwrite_labelled_shows": false (If false will not touch any show with the "Overlay" label in Plex) (Can be passed via command line using -OL)
+        - "only_process_new_assets" true (Combined with overwrite_labelled_shows (true) will only update posters for items in labelled shows that do not already have assets saved) (Can be passed via command line using -ON)
    - Fixed collections
    - Mediux collection backgrounds
    - Various other tweaks / changes.
@@ -84,3 +84,5 @@ Command line arguments are supported.
 1. Passing a single link e.g.`plex_poster_set_helper.py https://mediux.pro/sets/9242` or `plex_poster_set_helper.py https://mediux.pro/user/XXYYZZ/sets`
 
 2. Passing a bulk import file e.g. `plex_poster_set_helper.py bulk example_bulk_import.txt`
+
+3. Passing variables e.g. `plex_poster_set_helper.py bulk new.txt -OE true --OL true --NA false`

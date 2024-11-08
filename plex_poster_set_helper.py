@@ -81,10 +81,16 @@ def plex_setup():
             append_label = config.get("append_label", "Overlay")
             append_label = [append_label] if isinstance(append_label, str) else (append_label if isinstance(append_label, list) else ["Overlay"])
             assets_directory = config.get("assets_directory", "assets")
-            overwrite_existing_assets = config.get("overwrite_existing_assets", False)
-            overwrite_labelled_shows = config.get("overwrite_labelled_shows", False)
+            
+            # Only set the following variables if they were not overridden by command-line arguments
+            if 'overwrite_existing_assets' not in globals() or overwrite_existing_assets is None:
+                overwrite_existing_assets = config.get("overwrite_existing_assets", False)
+            if 'overwrite_labelled_shows' not in globals() or overwrite_labelled_shows is None:
+                overwrite_labelled_shows = config.get("overwrite_labelled_shows", False)
+            if 'only_process_new_assets' not in globals() or only_process_new_assets is None:
+                only_process_new_assets = config.get("only_process_new_assets", True)
+
             asset_folders = config.get("asset_folders", True)
-            only_process_new_assets = config.get("only_process_new_assets", True)
             useragent = config.get("useragent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
             plex = PlexServer(base_url, token)
@@ -1032,9 +1038,36 @@ def process_ids(set_ids, boxset_ids):
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
+    # Initialize indices for cleanup later
+    oe_index = ol_index = na_index = None
+
+    # Parse command-line arguments for flags
+    if "--OE" in sys.argv:
+        oe_index = sys.argv.index("--OE") + 1
+        if oe_index < len(sys.argv):
+            overwrite_existing_assets = sys.argv[oe_index].lower() == "true"
+    
+    if "--OL" in sys.argv:
+        ol_index = sys.argv.index("--OL") + 1
+        if ol_index < len(sys.argv):
+            overwrite_labelled_shows = sys.argv[ol_index].lower() == "true"
+    
+    if "--NA" in sys.argv:
+        na_index = sys.argv.index("--NA") + 1
+        if na_index < len(sys.argv):
+            only_process_new_assets = sys.argv[na_index].lower() == "true"
+    
+    # Clean up sys.argv to remove processed flags and values
+    indices_to_remove = {i for i in [oe_index, ol_index, na_index] if i is not None}
+    sys.argv = [arg for i, arg in enumerate(sys.argv) if i not in indices_to_remove and arg not in ["--OE", "--OL", "--NA"]]
+
+    # Initialize Plex setup
     plex_setup()
+    
+    # Check for command input
     if len(sys.argv) > 1:
         command = sys.argv[1].lower()
+        
         # Handle 'bulk' command
         if command == "bulk":
             if len(sys.argv) > 2:
@@ -1042,6 +1075,7 @@ if __name__ == "__main__":
                 parse_urls(file_path)
             else:
                 print("Please provide the path to the .txt file.")
+                
         elif "/user/" in command:
             if "theposterdb.com" in command:
                 scrape_entire_user(command)
@@ -1049,7 +1083,9 @@ if __name__ == "__main__":
                 scrape_mediux_user(command)
         else:
             set_posters(command)
+    
     else:
+        # Interactive mode
         while True:
             user_input = input("Enter a ThePosterDB set (or user) or a MediUX set URL, or type 'stop' to exit: ").strip()
             
