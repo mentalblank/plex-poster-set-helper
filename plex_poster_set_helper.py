@@ -725,12 +725,22 @@ def scrape_mediux(soup):
 
 
             if data.get("fileType") == "title_card":
+                file_type = "title_card"
                 episode_id = data.get("episode_id", {}).get("id")
                 season = data.get("episode_id", {}).get("season_id", {}).get("season_number")
-                season_data = next((ep for ep in episodes if ep["season_number"] == season), {})
-                episode_data = next((ep for ep in season_data.get("episodes", []) if ep["id"] == episode_id), {})
-                episode = episode_data.get("episode_number")
-                file_type = "title_card"
+                season_data = next((ep for ep in episodes if ep.get("season_number") == season), {})
+                episode_data = next((ep for ep in season_data.get("episodes", []) if ep.get("id") == episode_id), {})
+                episode = episode_data.get("episode_number", "")
+                if not episode:
+                    title = data.get("title", "")
+                    if not title:
+                        print(f"{show_name} - Error getting episode info for a title card.")
+                    else:
+                        match = re.search(r"E(\d{1,2})", title)
+                        if match:
+                            episode = int(match.group(1))
+                        else:
+                            print(f"{show_name} - Error parsing title card info from title: {title}")
             elif data.get("fileType") == "backdrop":
                 season = "Backdrop"
                 episode = None
